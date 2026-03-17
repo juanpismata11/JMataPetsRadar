@@ -1,4 +1,3 @@
-import { envs } from "src/config/envs";
 import { FoundPet } from "src/core/interfaces/found-pet.interface";
 import { LostPet } from "src/core/interfaces/lost-pet.interface";
 import { generateMapboxImage } from "src/core/utils/utils";
@@ -16,9 +15,10 @@ export const generateFoundPetEmailTemplate = (
   });
 
   const mapUrl = generateMapboxImage(
-    
-    foundPet,
-    lostPet
+    lostPet.location.coordinates[0],
+    lostPet.location.coordinates[1],
+    foundPet.location.coordinates[0],
+    foundPet.location.coordinates[1]
   );
 
   return `
@@ -65,7 +65,7 @@ export const generateFoundPetEmailTemplate = (
                               <img 
                                 src="${mapUrl}" 
                                 width="600" 
-                                height="400" 
+                                height="300" 
                                 style="border-radius:12px; max-width:100%; display:block;" 
                                 alt="Mapa de ubicación"/>
                               

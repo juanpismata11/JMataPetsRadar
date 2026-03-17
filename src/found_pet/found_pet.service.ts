@@ -21,6 +21,13 @@ export class FoundPetsService {
     private readonly dataSource: DataSource
   ) {}
 
+  private getCoordinates(pet: FoundPet | LostPet) {
+    return {
+      lon: pet.location.coordinates[0],
+      lat: pet.location.coordinates[1],
+    };
+  }
+
   async createFoundPet(data: FoundPetDTO): Promise<FoundPet> {
     const newFoundPet = this.foundPetRepository.create({
       species: data.species,
@@ -34,13 +41,11 @@ export class FoundPetsService {
       finder_phone: data.finder_phone,
       location: data.location,
       address: data.address,
-      found_date: data.found_date
+      found_date: data.found_date,
     });
 
     const savedFoundPet = await this.foundPetRepository.save(newFoundPet);
-
-    const lng = data.location.coordinates[0];
-    const lat = data.location.coordinates[1];
+    const { lon, lat } = this.getCoordinates(savedFoundPet);
 
     const lostPetsNearby = await this.dataSource
       .getRepository(LostPet)
@@ -60,24 +65,35 @@ export class FoundPetsService {
           500
         )`
       )
-      .setParameters({ lng, lat })
+      .setParameters({ lng: lon, lat })
       .orderBy('distance', 'ASC')
       .getMany();
 
-      for (const lostPet of lostPetsNearby) {
-        const template = generateFoundPetEmailTemplate(
-          lostPet,
-          savedFoundPet as FoundPet
-        );
+    // Enviar emails a dueños de mascotas perdidas cercanas
+    for (const lostPet of lostPetsNearby) {
+      const lostCoords = this.getCoordinates(lostPet);
+      const foundCoords = this.getCoordinates(savedFoundPet);
 
-        const options: EmailOptions = {
-          to: lostPet.owner_email,
-          subject: `Mascota encontrada cerca de ${lostPet.name}`,
-          html: template
-        };
+      const mapUrl = generateMapboxImage(
+        lostCoords.lon,
+        lostCoords.lat,
+        foundCoords.lon,
+        foundCoords.lat
+      );
 
-        await this.emailService.sendEmail(options);
-      }
+      const template = generateFoundPetEmailTemplate(
+        lostPet,
+        savedFoundPet,
+      );
+
+      const options: EmailOptions = {
+        to: lostPet.owner_email,
+        subject: `Mascota encontrada cerca de ${lostPet.name}`,
+        html: template,
+      };
+
+      await this.emailService.sendEmail(options);
+    }
 
     return savedFoundPet;
   }
