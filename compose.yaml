@@ -1,9 +1,9 @@
 services:
   postgres:
     image: postgis/postgis:16-master
-    container_name: PostgresDB
+    container_name: petradar
     ports:
-      - 5433:5432
+      - 5432:5432
     environment:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}

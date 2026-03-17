@@ -18,7 +18,7 @@ export class EmailService {
     async sendEmail(options: EmailOptions) : Promise<Boolean>{
         try{
             await this.transporter.sendMail({
-                to: "dev@gmail.com",
+                to: "juanpismata11@gmail.com",
                 subject: options.subject,
                 html: options.html
             });

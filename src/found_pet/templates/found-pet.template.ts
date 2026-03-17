@@ -1,10 +1,11 @@
+import { envs } from "src/config/envs";
 import { FoundPet } from "src/core/interfaces/found-pet.interface";
 import { LostPet } from "src/core/interfaces/lost-pet.interface";
+import { generateMapboxImage } from "src/core/utils/utils";
 
 export const generateFoundPetEmailTemplate = (
   lostPet: LostPet,
-  foundPet: FoundPet,
-  mapUrl: string
+  foundPet: FoundPet
 ): string => {
   const date = new Date().toLocaleDateString("es-MX", {
     year: "numeric",
@@ -13,6 +14,12 @@ export const generateFoundPetEmailTemplate = (
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const mapUrl = generateMapboxImage(
+    
+    foundPet,
+    lostPet
+  );
 
   return `
   <!DOCTYPE html>
@@ -55,8 +62,13 @@ export const generateFoundPetEmailTemplate = (
                                   Mascota encontrada: ${foundPet.address}
                               </p>
 
-                              <img src="${mapUrl}" width="100%" style="border-radius:12px;" alt="Mapa de ubicación"/>
-
+                              <img 
+                                src="${mapUrl}" 
+                                width="600" 
+                                height="400" 
+                                style="border-radius:12px; max-width:100%; display:block;" 
+                                alt="Mapa de ubicación"/>
+                              
                               <p style="font-size:12px;color:#888;margin-top:24px;">
                                   Correo generado el ${date} por PetRadar
                               </p>

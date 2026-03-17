@@ -1,29 +1,34 @@
 import { Injectable } from '@nestjs/common';
 import { LostPet } from 'src/core/db/entities/lost-pet.entity';
-import { DataSource } from 'typeorm';
+import type { LostPet as LostPetDTO } from 'src/core/interfaces/lost-pet.interface';
+import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 
 @Injectable()
 export class LostPetsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectRepository(LostPet)
+    private readonly lostPetRepository: Repository<LostPet>
+  ) {}
 
-  async createLostPet(data: Partial<LostPet>): Promise<LostPet> {
-    const repo = this.dataSource.getRepository(LostPet);
-    const lostPet = repo.create(data);
-    return await repo.save(lostPet);
-  }
+  async createLostPet(data: LostPetDTO): Promise<LostPet> {
+    const newLostPet = this.lostPetRepository.create({
+      name: data.name,
+      species: data.species,
+      breed: data.breed,
+      color: data.color,
+      size: data.size,
+      description: data.description,
+      photo_url: data.photo_url,
+      owner_name: data.owner_name,
+      owner_email: data.owner_email,
+      owner_phone: data.owner_phone,
+      location: data.location,
+      address: data.address,
+      lost_date: data.lost_date,
+      is_active: true
+    });
 
-  async findAll(): Promise<LostPet[]> {
-    const repo = this.dataSource.getRepository(LostPet);
-    return await repo.find({ where: { is_active: true } });
-  }
-
-  async findOne(id: number): Promise<LostPet | null> {
-    const repo = this.dataSource.getRepository(LostPet);
-    return await repo.findOne({ where: { id } });
-  }
-
-  async deactivate(id: number): Promise<void> {
-    const repo = this.dataSource.getRepository(LostPet);
-    await repo.update(id, { is_active: false });
+    return this.lostPetRepository.save(newLostPet);
   }
 }

@@ -15,3 +15,5 @@ export const envs = {
   DB_HOST: env.get('DB_HOST').required().asString(),
   DB_USER: env.get('DB_USER').required().asString(),
 };
+
+console.log("Token Mapbox:", envs.MAPBOX_TOKEN);

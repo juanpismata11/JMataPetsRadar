@@ -1,66 +1,84 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
-import { generateMapboxImage } from 'src/core/utils/utils';
-import { LostPet } from 'src/core/db/entities/lost-pet.entity';
 import { FoundPet } from 'src/core/db/entities/found-pet.entity';
+import { LostPet } from 'src/core/db/entities/lost-pet.entity';
+import type { FoundPet as FoundPetDTO } from 'src/core/interfaces/found-pet.interface';
+import { EmailOptions } from 'src/core/interfaces/mail-options.interface';
 import { EmailService } from 'src/email/email.service';
+import { Repository, DataSource } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 import { generateFoundPetEmailTemplate } from './templates/found-pet.template';
+import { envs } from 'src/config/envs';
+import { generateMapboxImage } from 'src/core/utils/utils';
 
 @Injectable()
 export class FoundPetsService {
   constructor(
-    private readonly dataSource: DataSource,
-    private readonly mailService: EmailService
+    @InjectRepository(FoundPet)
+    private readonly foundPetRepository: Repository<FoundPet>,
+    @InjectRepository(LostPet)
+    private readonly lostPetRepository: Repository<LostPet>,
+    private readonly emailService: EmailService,
+    private readonly dataSource: DataSource
   ) {}
 
-  async registerFoundPet(foundPetData: Partial<FoundPet>) {
-    // 1️⃣ Guardar la mascota encontrada
-    const foundPetRepo = this.dataSource.getRepository(FoundPet);
-    const foundPet = foundPetRepo.create(foundPetData);
-    await foundPetRepo.save(foundPet);
+  async createFoundPet(data: FoundPetDTO): Promise<FoundPet> {
+    const newFoundPet = this.foundPetRepository.create({
+      species: data.species,
+      breed: data.breed,
+      color: data.color,
+      size: data.size,
+      description: data.description,
+      photo_url: data.photo_url,
+      finder_name: data.finder_name,
+      finder_email: data.finder_email,
+      finder_phone: data.finder_phone,
+      location: data.location,
+      address: data.address,
+      found_date: data.found_date
+    });
 
-    if (!foundPet.location) {
-      throw new Error('La ubicación de la mascota encontrada es obligatoria');
-    }
+    const savedFoundPet = await this.foundPetRepository.save(newFoundPet);
 
-    const [foundLon, foundLat] = foundPet.location.coordinates; // GeoJSON [lng, lat]
+    const lng = data.location.coordinates[0];
+    const lat = data.location.coordinates[1];
 
-    // 2️⃣ Buscar mascotas perdidas en radio de 500m
-    const lostPetsRepo = this.dataSource.getRepository(LostPet);
-    const lostPetsNearby = await lostPetsRepo
-      .createQueryBuilder('lost_pet')
-      .where('lost_pet.is_active = true')
+    const lostPetsNearby = await this.dataSource
+      .getRepository(LostPet)
+      .createQueryBuilder('lost')
+      .addSelect(
+        `ST_Distance(
+          lost.location,
+          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+        )`,
+        'distance'
+      )
+      .where('lost.is_active = true')
       .andWhere(
         `ST_DWithin(
-           lost_pet.location,
-           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-           500
-         )`,
-        { lng: foundLon, lat: foundLat }
+          lost.location,
+          ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+          500
+        )`
       )
-      .orderBy(
-        `ST_Distance(
-           lost_pet.location,
-           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
-         )`,
-        'ASC'
-      )
+      .setParameters({ lng, lat })
+      .orderBy('distance', 'ASC')
       .getMany();
 
-    // 3️⃣ Enviar correo a cada dueño
-    for (const lostPet of lostPetsNearby) {
-      if (!lostPet.location) continue;
-      const [lostLon, lostLat] = lostPet.location.coordinates;
-      const mapUrl = generateMapboxImage(lostLat, lostLon, foundLat, foundLon);
-      const html = generateFoundPetEmailTemplate(lostPet, foundPet, mapUrl);
+      for (const lostPet of lostPetsNearby) {
+        const template = generateFoundPetEmailTemplate(
+          lostPet,
+          savedFoundPet as FoundPet
+        );
 
-      await this.mailService.sendEmail({
-        to: lostPet.owner_email,
-        subject: `¡Mascota encontrada! ${lostPet.name}`,
-        html
-      });
-    }
+        const options: EmailOptions = {
+          to: lostPet.owner_email,
+          subject: `Mascota encontrada cerca de ${lostPet.name}`,
+          html: template
+        };
 
-    return { foundPet, notifiedOwners: lostPetsNearby.length };
+        await this.emailService.sendEmail(options);
+      }
+
+    return savedFoundPet;
   }
 }
