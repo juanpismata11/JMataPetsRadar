@@ -9,23 +9,52 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { generateFoundPetEmailTemplate } from './templates/found-pet.template';
 import { envs } from 'src/config/envs';
 import { generateMapboxImage } from 'src/core/utils/utils';
+import Redis from 'ioredis';
+import { CacheService } from 'src/cache/cache.service';
+
+const CACHE_KEY_ALL_PETS = "pets:all"
 
 @Injectable()
 export class FoundPetsService {
   constructor(
     @InjectRepository(FoundPet)
     private readonly foundPetRepository: Repository<FoundPet>,
-    @InjectRepository(LostPet)
-    private readonly lostPetRepository: Repository<LostPet>,
     private readonly emailService: EmailService,
-    private readonly dataSource: DataSource
+    private readonly dataSource: DataSource,
+    private readonly cacheService: CacheService
+    
   ) {}
+
+  private readonly redis = new Redis({
+  host: envs.REDIS_HOST,
+  port: envs.REDIS_PORT
+    })
 
   private getCoordinates(pet: FoundPet | LostPet) {
     return {
       lon: pet.location.coordinates[0],
       lat: pet.location.coordinates[1],
     };
+  }
+
+  async foundPets(): Promise<FoundPet[]>{
+    try{
+      console.log("Retrieving from cache")
+      const cache = await this.cacheService.get<FoundPet[]>(CACHE_KEY_ALL_PETS);
+      if(cache){
+        console.log("successful")
+        return cache;
+      }
+
+      const data = await this.foundPetRepository.find()
+      await this.cacheService.set(CACHE_KEY_ALL_PETS, data)
+
+
+      return data
+
+    } catch(error){
+      throw new Error("no se pudo encontrar las mascotas encontradas")
+    }
   }
 
   async createFoundPet(data: FoundPetDTO): Promise<FoundPet> {
