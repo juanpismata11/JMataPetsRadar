@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from 'src/cache/cache.service';
 import Redis from 'ioredis';
 import { envs } from 'src/config/envs';
+import { logger } from 'src/config/logger';
 
 //npm i applicationinsights
 
@@ -50,11 +51,11 @@ export class LostPetsService {
 
   async getActiveLostPets(): Promise<LostPet[]>{
     try{
-      console.log("[IncidentService] intentando traer las mascotas perdidas que siguen activas desde cache")
+      logger.info("[LostPetsService] intentando traer las mascotas perdidas que siguen activas desde cache")
 
       const cached = await this.cacheService.get<LostPet[]>(CACHE_KEY_ALL_PETS);
       if(cached){
-        console.log("Cache history, retornando")
+        logger.info("[LostPetsService], retornando")
         return cached
       }
 
@@ -62,7 +63,7 @@ export class LostPetsService {
       const data = await this.lostPetRepository
       .createQueryBuilder('pets')
       .where( `pets.is_active === :isActive`, {isActive: true} )
-      .orderBy('pets.lost_date', 'DESC') // más recientes primero
+      .orderBy('pets.lost_date', 'DESC')
       .getMany();
 
       await this.cacheService.set(CACHE_KEY_ALL_PETS, data)
@@ -70,7 +71,7 @@ export class LostPetsService {
     return data;
 
 } catch(error){
-    console.error("[IncidentService] error al traer incidentes:", error);
+    logger.info("[LostPetsService] error al traer incidentes:", error);
 
     return [];
 

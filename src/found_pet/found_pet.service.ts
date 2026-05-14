@@ -11,6 +11,7 @@ import { envs } from 'src/config/envs';
 import { generateMapboxImage } from 'src/core/utils/utils';
 import Redis from 'ioredis';
 import { CacheService } from 'src/cache/cache.service';
+import { logger } from 'src/config/logger';
 
 const CACHE_KEY_ALL_PETS = "pets:all"
 
@@ -25,11 +26,6 @@ export class FoundPetsService {
     
   ) {}
 
-  private readonly redis = new Redis({
-  host: envs.REDIS_HOST,
-  port: envs.REDIS_PORT
-    })
-
   private getCoordinates(pet: FoundPet | LostPet) {
     return {
       lon: pet.location.coordinates[0],
@@ -39,7 +35,7 @@ export class FoundPetsService {
 
   async foundPets(): Promise<FoundPet[]>{
     try{
-      console.log("Retrieving from cache")
+      logger.info("[FoundPetsService] Retrieving from cache")
       const cache = await this.cacheService.get<FoundPet[]>(CACHE_KEY_ALL_PETS);
       if(cache){
         console.log("successful")
@@ -53,6 +49,7 @@ export class FoundPetsService {
       return data
 
     } catch(error){
+      logger.info("[FoundPetsService] no se pudo encontrar")
       throw new Error("no se pudo encontrar las mascotas encontradas")
     }
   }

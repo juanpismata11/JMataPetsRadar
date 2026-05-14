@@ -1,6 +1,8 @@
 node_modules
 .git
+.github
 .env
 *md
 Dockerfile
 compose.yaml
+dist
