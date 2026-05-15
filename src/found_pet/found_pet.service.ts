@@ -7,13 +7,11 @@ import { EmailService } from 'src/email/email.service';
 import { Repository, DataSource } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { generateFoundPetEmailTemplate } from './templates/found-pet.template';
-import { envs } from 'src/config/envs';
 import { generateMapboxImage } from 'src/core/utils/utils';
-import Redis from 'ioredis';
 import { CacheService } from 'src/cache/cache.service';
 import { logger } from 'src/config/logger';
 
-const CACHE_KEY_ALL_PETS = "pets:all"
+const CACHE_KEY_FOUND_PETS = 'found_pets:all';
 
 @Injectable()
 export class FoundPetsService {
@@ -22,8 +20,7 @@ export class FoundPetsService {
     private readonly foundPetRepository: Repository<FoundPet>,
     private readonly emailService: EmailService,
     private readonly dataSource: DataSource,
-    private readonly cacheService: CacheService
-    
+    private readonly cacheService: CacheService,
   ) {}
 
   private getCoordinates(pet: FoundPet | LostPet) {
@@ -33,24 +30,20 @@ export class FoundPetsService {
     };
   }
 
-  async foundPets(): Promise<FoundPet[]>{
-    try{
-      logger.info("[FoundPetsService] Retrieving from cache")
-      const cache = await this.cacheService.get<FoundPet[]>(CACHE_KEY_ALL_PETS);
-      if(cache){
-        console.log("successful")
+  async foundPets(): Promise<FoundPet[]> {
+    try {
+      const cache = await this.cacheService.get<FoundPet[]>(CACHE_KEY_FOUND_PETS);
+      if (cache) {
+        logger.info('[FoundPetsService] cache hit');
         return cache;
       }
 
-      const data = await this.foundPetRepository.find()
-      await this.cacheService.set(CACHE_KEY_ALL_PETS, data)
-
-
-      return data
-
-    } catch(error){
-      logger.info("[FoundPetsService] no se pudo encontrar")
-      throw new Error("no se pudo encontrar las mascotas encontradas")
+      const data = await this.foundPetRepository.find();
+      await this.cacheService.set(CACHE_KEY_FOUND_PETS, data);
+      return data;
+    } catch (error) {
+      logger.error('[FoundPetsService] error al traer mascotas encontradas:', error);
+      throw new Error('No se pudieron obtener las mascotas encontradas');
     }
   }
 
@@ -78,24 +71,27 @@ export class FoundPetsService {
       .createQueryBuilder('lost')
       .addSelect(
         `ST_Distance(
-          lost.location,
+          lost.location::geography,
           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
         )`,
-        'distance'
+        'distance',
       )
-      .where('lost.is_active = true')
+      .where('lost.is_active = :isActive', { isActive: true })
       .andWhere(
         `ST_DWithin(
-          lost.location,
+          lost.location::geography,
           ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
           500
-        )`
+        )`,
       )
       .setParameters({ lng: lon, lat })
       .orderBy('distance', 'ASC')
       .getMany();
 
-    // Enviar emails a dueños de mascotas perdidas cercanas
+    logger.info(
+      `[FoundPetsService] ${lostPetsNearby.length} mascotas perdidas dentro de 500m`,
+    );
+
     for (const lostPet of lostPetsNearby) {
       const lostCoords = this.getCoordinates(lostPet);
       const foundCoords = this.getCoordinates(savedFoundPet);
@@ -104,13 +100,10 @@ export class FoundPetsService {
         lostCoords.lon,
         lostCoords.lat,
         foundCoords.lon,
-        foundCoords.lat
+        foundCoords.lat,
       );
 
-      const template = generateFoundPetEmailTemplate(
-        lostPet,
-        savedFoundPet,
-      );
+      const template = generateFoundPetEmailTemplate(lostPet, savedFoundPet);
 
       const options: EmailOptions = {
         to: lostPet.owner_email,
@@ -118,8 +111,17 @@ export class FoundPetsService {
         html: template,
       };
 
-      await this.emailService.sendEmail(options);
+      try {
+        await this.emailService.sendEmail(options);
+      } catch (err) {
+        logger.error(
+          `[FoundPetsService] error enviando email a ${lostPet.owner_email}:`,
+          err,
+        );
+      }
     }
+
+    await this.cacheService.delete(CACHE_KEY_FOUND_PETS);
 
     return savedFoundPet;
   }

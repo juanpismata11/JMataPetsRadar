@@ -4,26 +4,17 @@ import type { LostPet as LostPetDTO } from 'src/core/interfaces/lost-pet.interfa
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CacheService } from 'src/cache/cache.service';
-import Redis from 'ioredis';
-import { envs } from 'src/config/envs';
 import { logger } from 'src/config/logger';
 
-//npm i applicationinsights
-
-const CACHE_KEY_ALL_PETS = "pets:all"
+const CACHE_KEY_LOST_PETS = 'lost_pets:all';
 
 @Injectable()
 export class LostPetsService {
   constructor(
     @InjectRepository(LostPet)
     private readonly lostPetRepository: Repository<LostPet>,
-    private readonly cacheService: CacheService
+    private readonly cacheService: CacheService,
   ) {}
-
-      private readonly redis = new Redis({
-        host: envs.REDIS_HOST,
-        port: envs.REDIS_PORT
-    })
 
   async createLostPet(data: LostPetDTO): Promise<LostPet> {
     const newLostPet = this.lostPetRepository.create({
@@ -40,41 +31,34 @@ export class LostPetsService {
       location: data.location,
       address: data.address,
       lost_date: data.lost_date,
-      is_active: true
+      is_active: true,
     });
 
-    const saved =  this.lostPetRepository.save(newLostPet)
-    await this.redis.del(CACHE_KEY_ALL_PETS)
+    const saved = await this.lostPetRepository.save(newLostPet);
+    await this.cacheService.delete(CACHE_KEY_LOST_PETS);
 
-    return saved
+    return saved;
   }
 
-  async getActiveLostPets(): Promise<LostPet[]>{
-    try{
-      logger.info("[LostPetsService] intentando traer las mascotas perdidas que siguen activas desde cache")
-
-      const cached = await this.cacheService.get<LostPet[]>(CACHE_KEY_ALL_PETS);
-      if(cached){
-        logger.info("[LostPetsService], retornando")
-        return cached
+  async getActiveLostPets(): Promise<LostPet[]> {
+    try {
+      const cached = await this.cacheService.get<LostPet[]>(CACHE_KEY_LOST_PETS);
+      if (cached) {
+        logger.info('[LostPetsService] cache hit');
+        return cached;
       }
 
-
       const data = await this.lostPetRepository
-      .createQueryBuilder('pets')
-      .where( `pets.is_active === :isActive`, {isActive: true} )
-      .orderBy('pets.lost_date', 'DESC')
-      .getMany();
+        .createQueryBuilder('pets')
+        .where('pets.is_active = :isActive', { isActive: true })
+        .orderBy('pets.lost_date', 'DESC')
+        .getMany();
 
-      await this.cacheService.set(CACHE_KEY_ALL_PETS, data)
-
-    return data;
-
-} catch(error){
-    logger.info("[LostPetsService] error al traer incidentes:", error);
-
-    return [];
-
-}
+      await this.cacheService.set(CACHE_KEY_LOST_PETS, data);
+      return data;
+    } catch (error) {
+      logger.error('[LostPetsService] error al traer mascotas perdidas:', error);
+      return [];
+    }
   }
 }
